@@ -1,100 +1,92 @@
-local AimlockEnabled = false
-local Player = game.Players.LocalPlayer
-
--- Field of View (FOV) setup
-local fov = 100
-local FOVring = Drawing.new("Circle")
-FOVring.Visible = true
-FOVring.Thickness = 1
-FOVring.Radius = fov
-FOVring.Transparency = 0.8
-FOVring.Color = Color3.fromRGB(255, 255, 255)
-FOVring.Position = workspace.CurrentCamera.ViewportSize / 2
-
--- Global FFA mode toggle (can now be changed from GUI)
-_G.FFA = true
-
-local function isPlayerInFOV(player)
-    local camera = game.Workspace.CurrentCamera
-    local character = player.Character
-    if character then
-        local parts = {"Head", "HumanoidRootPart", "Torso", "UpperTorso", "LowerTorso"}
-        for _, partName in ipairs(parts) do
-            local part = character:FindFirstChild(partName)
-            if part then
-                local screenPosition = camera:WorldToScreenPoint(part.Position)
-                local distanceFromCenter = (Vector2.new(screenPosition.X, screenPosition.Y) - FOVring.Position).Magnitude
-                if distanceFromCenter <= fov then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function enableAimlock()
-    AimlockEnabled = true
-    while AimlockEnabled do
-        local closestEnemy = nil
-        local shortestDistance = math.huge
-
-        for _, target in pairs(game.Players:GetPlayers()) do
-            if target ~= Player and target.Character then
-                local character = target.Character
-                local head = character:FindFirstChild("Head")
-                local root = character:FindFirstChild("HumanoidRootPart")
-                local humanoid = character:FindFirstChild("Humanoid")
-                
-                -- Updated Team Check using _G.FFA
-                if _G.FFA or target.Team ~= Player.Team then
-                    if humanoid and humanoid.Health > 0 and isPlayerInFOV(target) then
-                        local aimTarget = head or root
-                        if aimTarget then
-                            local distance = (Player.Character.HumanoidRootPart.Position - aimTarget.Position).Magnitude
-                            if distance < shortestDistance then
-                                closestEnemy = target
-                                shortestDistance = distance
-                            end
-                        end
-                    end
-                end
-            end
-        end
-
-        -- Lock onto enemy
-        if closestEnemy and closestEnemy.Character then
-            local enemyHead = closestEnemy.Character:FindFirstChild("Head")
-            local enemyRoot = closestEnemy.Character:FindFirstChild("HumanoidRootPart")
-            local targetPart = enemyHead or enemyRoot
-            if targetPart then
-                local camera = game.Workspace.CurrentCamera
-                camera.CFrame = CFrame.new(camera.CFrame.Position, targetPart.Position)
-            end
-        end
-        wait(0.1)
-    end
-end
-
-local function disableAimlock()
-    AimlockEnabled = false
-end
-
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local rightMouseButtonDown = false
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed then
-        if input.UserInputType == Enum.UserInputType.MouseButton2 then
-            rightMouseButtonDown = true
-            enableAimlock()
-        end
-    end
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- CONFIG
+local FOVRadius = 100
+local AimPart = "Head"
+_G.ffa = False -- Set to true for Free For All mode
+
+-- STATE
+local Holding = false
+
+-- FOV Circle Drawing
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Thickness = 2
+FOVCircle.Filled = false
+FOVCircle.Color = Color3.new(1, 1, 1)
+FOVCircle.Transparency = 1
+FOVCircle.Radius = FOVRadius
+FOVCircle.Visible = true
+
+-- Get Closest Valid Target
+local function GetClosestTarget()
+	local closestPlayer = nil
+	local lowestDistance = math.huge
+	local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		if
+			player ~= LocalPlayer
+			and character
+			and character:FindFirstChild(AimPart)
+			and character:FindFirstChild("Humanoid")
+			and character.Humanoid.Health > 0
+			and (_G.ffa or player.Team ~= LocalPlayer.Team)
+		then
+			local part = character[AimPart]
+			local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+			local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+			local worldDist = (Camera.CFrame.Position - part.Position).Magnitude
+
+			if onScreen and screenDist < FOVRadius then
+				if worldDist < lowestDistance then
+					lowestDistance = worldDist
+					closestPlayer = player
+				end
+			end
+		end
+	end
+
+	return closestPlayer
+end
+
+-- Lock-On Loop
+RunService.RenderStepped:Connect(function()
+	local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	FOVCircle.Position = screenCenter
+
+	if Holding then
+		local target = GetClosestTarget()
+		if
+			target
+			and target.Character
+			and target.Character:FindFirstChild(AimPart)
+			and target.Character:FindFirstChild("Humanoid")
+			and target.Character.Humanoid.Health > 0
+		then
+			local part = target.Character[AimPart]
+			local direction = (part.Position - Camera.CFrame.Position).Unit
+			local newCFrame = CFrame.new(Camera.CFrame.Position, Camera.CFrame.Position + direction)
+
+			Camera.CFrame = newCFrame
+		end
+	end
+end)
+
+-- Input Toggle
+UserInputService.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		Holding = true
+	end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        rightMouseButtonDown = false
-        disableAimlock()
-    end
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		Holding = false
+	end
 end)

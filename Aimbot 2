@@ -8,7 +8,7 @@ local Camera = workspace.CurrentCamera
 -- CONFIG
 local FOVRadius = 100
 local AimPart = "Head"
-_G.ffa = true -- Set to true for Free For All mode
+_G.ffa = true        -- Set to true for Free For All mode
 
 -- STATE
 local Holding = false
